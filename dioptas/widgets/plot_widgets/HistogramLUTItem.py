@@ -32,6 +32,9 @@ import pyqtgraph.functions as fn
 import pyqtgraph as pg
 import numpy as np
 
+from .ResetLevelsButton import ResetLevelsButton
+
+
 __all__ = ['HistogramLUTItem']
 
 # add grey_inverse to the list of color gradients:
@@ -45,6 +48,13 @@ pyqtgraph.graphicsItems.GradientEditorItem.Gradients['jet'] = \
 
 # set the error handling for numpy
 np.seterr(divide='ignore', invalid='ignore')
+
+
+def weighted_average_std(a, weights):
+    """Returns the weighted average and standard deviation"""
+    mean, sum_of_weights = np.average(a, weights=weights, returned=True)
+    variance = np.sum(weights * (a - mean) ** 2) / sum_of_weights
+    return mean, np.sqrt(variance)
 
 
 class HistogramLUTItem(GraphicsWidget):
@@ -73,6 +83,9 @@ class HistogramLUTItem(GraphicsWidget):
         self.percentageLevel = False
         self.orientation = orientation
         self.autoLevel = autoLevel
+        self.hist_x = None
+        self.hist_y = None
+        self._autoscaleLevelsMode = "default"
 
         self.layout = QtWidgets.QGraphicsGridLayout()
         self.setLayout(self.layout)
@@ -84,6 +97,15 @@ class HistogramLUTItem(GraphicsWidget):
         self.gradient = GradientEditorItem()
         self.gradient.loadPreset('grey')
 
+        #self.reset_btn = ResetLevelsButton()
+        #self.reset_btn.setMenuOnTop(orientation == 'vertical')
+        #self.reset_btn.sigModeChanged.connect(self._autoLevelsModeChanged)
+        #self.reset_btn.clicked.connect(self.resetLevels)
+
+        #proxy = QtWidgets.QGraphicsProxyWidget()
+        #proxy.setWidget(self.reset_btn)
+        #proxy.setToolTip('Reset colormap data range')
+
         if orientation == 'horizontal':
             self.vb.setMouseEnabled(x=True, y=False)
             self.vb.setMaximumHeight(30)
@@ -92,6 +114,7 @@ class HistogramLUTItem(GraphicsWidget):
             self.region = LogarithmRegionItem([0, 1], LinearRegionItem.Vertical)
             self.layout.addItem(self.vb, 1, 0)
             self.layout.addItem(self.gradient, 0, 0)
+            #self.layout.addItem(proxy, 1, 1, QtCore.Qt.AlignCenter)
             self.gradient.setFlag(self.gradient.ItemStacksBehindParent)
             self.vb.setFlag(self.gradient.ItemStacksBehindParent)
         elif orientation == 'vertical':
@@ -102,6 +125,7 @@ class HistogramLUTItem(GraphicsWidget):
             self.region = LogarithmRegionItem([0, 1], LinearRegionItem.Horizontal)
             self.layout.addItem(self.vb, 0, 0)
             self.layout.addItem(self.gradient, 0, 1)
+            #self.layout.addItem(proxy, 1, 0, QtCore.Qt.AlignCenter)
 
         self.gradient.setFlag(self.gradient.ItemStacksBehindParent)
         self.vb.setFlag(self.gradient.ItemStacksBehindParent)
@@ -238,6 +262,78 @@ class HistogramLUTItem(GraphicsWidget):
             self.imageItem.setLevels(np.exp(self.region.getRegion()))
         self.sigLevelsChanged.emit(self)
         self.update()
+
+    def setAutoLevelsMode(self, mode):
+        """Set the mode used by `resetLevels` to compute the colormap range
+
+        Colormap range modes:
+        - default
+        - minmax: Use image value range
+        - mean3std: Use mean+/-3standard deviation of image data
+        """
+        self._autoscaleLevelsMode = mode
+
+    def autoLevelsMode(self):
+        """Returns the mode used by `resetLevels` to compute the colormap range.
+
+        See `setAutoLevelsMode`.
+        """
+        return self._autoscaleLevelsMode
+
+    def resetLevels(self):
+        """Reset region data range from image histogram
+
+        The computation of the range depends on `autoLevelsMode`.
+        """
+        if self.hist_x is None or self.hist_y is None:
+            return
+
+        mode = self.autoLevelsMode()
+
+        if mode == "minmax":
+            # TODO use right edge at the end
+            positive_x = self.hist_x[self.hist_x > 0]
+            x = positive_x if len(positive_x) > 1 else self.hist_x
+            self.setLevels(x[0], x[-1])
+            return
+
+        if mode == "mean3std":
+            # TODO use bin centers
+            mask = self.hist_x > 0
+            positive_x = self.hist_x[mask]
+            if len(positive_x) > 1:
+                x, y = positive_x, self.hist_y[mask]
+            else:
+                x, y = hist_x, hist_y
+
+            mean, std = weighted_average_std(x, y)
+            self.setLevels(
+                max(x[0], mean - 3 * std),
+                min(x[-1], mean + 3 * std),
+            )
+            return
+
+        # Default auto level mode
+        hist_x, hist_y = self.hist_x, self.hist_y
+
+        hist_y_cumsum = np.cumsum(hist_y)
+        hist_y_sum = np.sum(hist_y)  # TODO replace by hist_y_cumsum[-1]
+
+        min_level = np.mean(hist_x[:2])
+        if len(hist_x[hist_x > 0]) > 0:
+            min_level = max(min_level, np.nanmin(hist_x[hist_x > 0]))
+
+        max_ind = np.where(hist_y_cumsum < (0.996 * hist_y_sum))
+        if len(max_ind[0]):
+            max_level = hist_x[max_ind[0][-1]]
+        else:
+            max_level = 0.5 * np.max(hist_x)
+
+        self.setLevels(min_level, max_level)
+
+    def _autoLevelsModeChanged(self, mode):
+        self.setAutoLevelsMode(mode)
+        self.resetLevels()
 
     def imageChanged(self, autoRange=False, img_data=None):
 

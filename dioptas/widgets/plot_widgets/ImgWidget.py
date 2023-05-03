@@ -30,6 +30,14 @@ from qtpy import QtCore, QtWidgets, QtGui
 
 from .HistogramLUTItem import HistogramLUTItem
 from .PatternWidget import ModifiedLinearRegionItem
+from .ResetLevelsButton import ResetLevelsButton
+
+
+def weighted_average_std(a, weights):
+    """Returns the weighted average and standard deviation"""
+    mean, sum_of_weights = np.average(a, weights=weights, returned=True)
+    variance = np.sum(weights * (a - mean) ** 2) / sum_of_weights
+    return mean, np.sqrt(variance)
 
 
 class ImgWidget(QtCore.QObject):
@@ -50,6 +58,7 @@ class ImgWidget(QtCore.QObject):
         self.mask_data = None
 
         self._max_range = True
+        self.auto_level_mode = "default"
 
     def create_graphics(self):
         self.img_view_box = self.pg_layout.addViewBox(row=1, col=1)  # type: ViewBox
@@ -58,9 +67,42 @@ class ImgWidget(QtCore.QObject):
         self.img_view_box.addItem(self.data_img_item)
 
         self.img_histogram_LUT_horizontal = HistogramLUTItem(self.data_img_item)
-        self.pg_layout.addItem(self.img_histogram_LUT_horizontal, row=0, col=1)
+        self.horizontal_lut_widget = self._create_lut_widget(self.img_histogram_LUT_horizontal)
+        self.pg_layout.addItem(self.horizontal_lut_widget, row=0, col=1)
+
         self.img_histogram_LUT_vertical = HistogramLUTItem(self.data_img_item, orientation='vertical')
-        self.pg_layout.addItem(self.img_histogram_LUT_vertical, row=1, col=2)
+        self.vertical_lut_widget = self._create_lut_widget(self.img_histogram_LUT_vertical)
+        self.pg_layout.addItem(self.vertical_lut_widget, row=1, col=2)
+
+    def _create_lut_widget(self, histogramLUTItem):
+        """Returns a QGraphicsWidget with the histogramLUTItem and """
+        orientation = histogramLUTItem.orientation
+        widget = QtWidgets.QGraphicsWidget()
+        layout = QtWidgets.QGraphicsLinearLayout(
+            QtCore.Qt.Horizontal if orientation =='horizontal' else QtCore.Qt.Vertical,
+            widget,
+        )
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+
+        layout.addItem(histogramLUTItem)
+
+        reset_btn = ResetLevelsButton()
+        reset_btn.clicked.connect(self.auto_level)
+        reset_btn.sigModeChanged.connect(self._auto_level_mode_changed)
+        reset_btn.setMenuOnTop(True)
+        proxy = QtWidgets.QGraphicsProxyWidget()
+        proxy.setWidget(reset_btn)
+        layout.addItem(proxy)
+        layout.setAlignment(
+            proxy,
+            QtCore.Qt.AlignBottom if orientation =='horizontal' else QtCore.Qt.AlignBottom,
+        )
+        return widget
+
+    def _auto_level_mode_changed(self, mode):
+        self.set_auto_level_mode(mode)
+        self.auto_level()
 
     def create_mouse_click_item(self):
         self.mouse_click_item = pg.ScatterPlotItem()
@@ -84,12 +126,12 @@ class ImgWidget(QtCore.QObject):
 
     def set_orientation(self, orientation):
         if orientation == 'horizontal':
-            self.img_histogram_LUT_vertical.hide()
-            self.img_histogram_LUT_horizontal.show()
+            self.vertical_lut_widget.hide()
+            self.horizontal_lut_widget.show()
             self.img_histogram_LUT_vertical.gradient = self.img_histogram_LUT_horizontal.gradient
         elif orientation == 'vertical':
-            self.img_histogram_LUT_horizontal.hide()
-            self.img_histogram_LUT_vertical.show()
+            self.horizontal_lut_widget.hide()
+            self.vertical_lut_widget.show()
             self.img_histogram_LUT_horizontal.gradient = self.img_histogram_LUT_vertical.gradient
         self.orientation = orientation
 
@@ -131,22 +173,50 @@ class ImgWidget(QtCore.QObject):
                 view_y_range[1] > self.img_data.shape[1]:
             self.auto_range()
 
+    def set_auto_level_mode(self, mode):
+        """Set the mode used by `auto_level` to compute the colormap range
+
+        Colormap range modes:
+        - 'default'
+        - 'minmax': Use image value range
+        - 'mean3std': Use mean+/-3standard deviation of image data
+        """
+        if mode not in ("default", "minmax", "mean3std"):
+            raise ValueError(f"Unsupported mode: {mode}")
+        self.auto_level_mode = mode
+
     def auto_level(self):
         hist_x, hist_y = self.img_histogram_LUT_horizontal.hist_x, self.img_histogram_LUT_horizontal.hist_y
+        positive_mask = hist_x > 0
+        positive_x = hist_x[positive_mask]
 
-        hist_y_cumsum = np.cumsum(hist_y)
-        hist_y_sum = np.sum(hist_y)
-
-        max_ind = np.where(hist_y_cumsum < (0.996 * hist_y_sum))
-        min_level = np.mean(hist_x[:2])
-
-        if len(max_ind[0]):
-            max_level = hist_x[max_ind[0][-1]]
+        if self.auto_level_mode == "minmax":
+            # TODO use right edge at the end
+            x = positive_x if len(positive_x) > 1 else hist_x
+            min_level, max_level = x[0], x[-1]
+        elif self.auto_level_mode == "mean3std":
+            # TODO use bin centers
+            if len(positive_x) > 1:
+                x, y = positive_x, hist_y[positive_mask]
+            else:
+                x, y = hist_x, hist_y
+            mean, std = weighted_average_std(np.log(x), y)
+            min_level = max(x[0], np.exp(mean - 3 * std))
+            max_level = min(x[-1], np.exp(mean + 3 * std))
         else:
-            max_level = 0.5 * np.max(hist_x)
+            hist_y_cumsum = np.cumsum(hist_y)
 
-        if len(hist_x[hist_x > 0]) > 0:
-            min_level = max(min_level, np.nanmin(hist_x[hist_x > 0]))
+            max_ind = np.where(hist_y_cumsum < (0.996 * hist_y_cumsum[-1]))
+            if len(max_ind[0]):
+                max_level = hist_x[max_ind[0][-1]]
+            else:
+                max_level = 0.5 * np.max(hist_x)
+
+            min_level = np.mean(hist_x[:2])
+            if len(positive_x) > 0:
+                min_level = max(min_level, np.nanmin(positive_x))
+
+        print(f"XXX {self.auto_level_mode}: [{min_level}, {max_level}]")
         self.img_histogram_LUT_vertical.setLevels(min_level, max_level)
         self.img_histogram_LUT_horizontal.setLevels(min_level, max_level)
 
@@ -600,7 +670,7 @@ class IntegrationBatchWidget(IntegrationCakeWidget):
         self.horizontal_line.hide()
         self.vertical_line.hide()
         self.mouse_click_item.hide()
-        self.pg_layout.removeItem(self.img_histogram_LUT_horizontal)
+        self.pg_layout.removeItem(self.horizontal_lut_widget)
 
         QtWidgets.QApplication.processEvents()
         exporter = ImageExporter(self.pg_layout.scene())
@@ -610,7 +680,7 @@ class IntegrationBatchWidget(IntegrationCakeWidget):
         self.horizontal_line.show()
         self.vertical_line.show()
         self.mouse_click_item.show()
-        self.pg_layout.addItem(self.img_histogram_LUT_horizontal, row=0, col=1)
+        self.pg_layout.addItem(self.horizontal_lut_widget, row=0, col=1)
 
     def add_cake_axes(self):
         """
