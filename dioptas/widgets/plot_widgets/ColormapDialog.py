@@ -24,6 +24,7 @@ import pathlib
 from qtpy import QtGui, QtCore, QtWidgets
 import pyqtgraph.graphicsItems.GradientEditorItem
 
+from . import utils
 from ... import style_path
 
 
@@ -38,6 +39,7 @@ class ColormapDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._histogram = None
         self.setWindowTitle("Colormap configuration")
         self.setStyleSheet(
             pathlib.Path(style_path, "stylesheet.qss").read_text()
@@ -63,12 +65,27 @@ class ColormapDialog(QtWidgets.QDialog):
         self._maxEdit.editingFinished.connect(self._rangeChanged)
         layout.addRow('Max:', self._maxEdit)
 
+        self._autoscaleButton = QtWidgets.QPushButton('Autoscale', self)
+        self._autoscaleButton.clicked.connect(self._autoscaleButtonClicked)
+        self._autoscaleButton.setAutoDefault(False)
+        self._autoscaleButton.setEnabled(False)
+        layout.addRow('', self._autoscaleButton)
+
         buttonBox = QtWidgets.QDialogButtonBox(parent=self)
         buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Close)
         closeButton = buttonBox.button(QtWidgets.QDialogButtonBox.Close)
         closeButton.clicked.connect(self.accept)
         closeButton.setAutoDefault(False)
         layout.addRow(buttonBox)
+
+    def setDataHistogram(self, counts: Optional[np.ndarray], bins: Optional[np.ndarray]):
+        """Set histogram of data to use for autoscale"""
+        self._histogram = None if counts is None or bins is None else (counts, bins)
+        self._autoscaleButton.setEnabled(self._histogram is not None)
+
+    def getDataHistogram(self) -> Optional[tuple[np.ndarray, np.ndarray]]:
+        """Returns histogram of data if set as (counts, bins) else None"""
+        return self._histogram
 
     def _gradientComboBoxCurrentIndexChanged(self, index: int):
         if index < 0:
@@ -123,6 +140,14 @@ class ColormapDialog(QtWidgets.QDialog):
         if not validated:
             maximum = minimum
         return minimum, maximum
+
+    def _autoscaleButtonClicked(self):
+        histogram = self.getDataHistogram()
+        if histogram is None:
+            return
+        counts, bins = histogram
+        minimum, maximum = utils.auto_level(bins, counts)
+        self.setRange(minimum, maximum)
 
     @staticmethod
     def _createQIconFromGradient(gradient: dict) -> QtGui.QIcon:

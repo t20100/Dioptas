@@ -306,6 +306,7 @@ class HistogramLUTItem(GraphicsWidget):
         dialog = ColormapDialog()
         dialog.setCurrentGradient(self.gradient.saveState())
         dialog.setRange(*self.getExpLevels())
+        dialog.setDataHistogram(counts=self.hist_y, bins=self.hist_x)
         dialog.sigCurrentGradientChanged.connect(self._configurationGradientChanged)
         dialog.sigRangeChanged.connect(self.setLevels)
         dialog.exec()
