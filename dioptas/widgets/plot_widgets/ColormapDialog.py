@@ -34,6 +34,9 @@ class ColormapDialog(QtWidgets.QDialog):
     sigCurrentGradientChanged = QtCore.Signal(dict)
     """Signal emitted when the colormap gradient has changed"""
 
+    sigCurrentNormalizationChanged = QtCore.Signal(str)
+    """Signal emitted when the colormap normalization has changed"""
+
     sigRangeChanged = QtCore.Signal(float, float)
     """Signal emitted when the data range has changed"""
 
@@ -53,6 +56,16 @@ class ColormapDialog(QtWidgets.QDialog):
             self._gradientComboBox.addItem(icon, name.capitalize(), gradient)
         self._gradientComboBox.currentIndexChanged.connect(self._gradientComboBoxCurrentIndexChanged)
         layout.addRow('Colormap:', self._gradientComboBox)
+
+        self._normalizationComboBox = QtWidgets.QComboBox(self)
+        self._normalizationComboBox.addItem("Linear", "linear")
+        self._normalizationComboBox.addItem("Logarithmic", "log")
+        self._normalizationComboBox.addItem("Square root", "sqrt")
+        self._normalizationComboBox.addItem("Arcsinh", "arcsinh")
+
+        self._normalizationComboBox.setCurrentIndex(0)
+        self._normalizationComboBox.currentIndexChanged.connect(self._normalizationComboBoxCurrentIndexChanged)
+        layout.addRow('Normalization:', self._normalizationComboBox)
 
         layout.addRow(QtWidgets.QLabel('Range:'))
         self._minEdit = QtWidgets.QLineEdit(self)
@@ -93,6 +106,12 @@ class ColormapDialog(QtWidgets.QDialog):
         gradient = self._gradientComboBox.itemData(index, QtCore.Qt.UserRole)
         self.sigCurrentGradientChanged.emit(gradient)
 
+    def _normalizationComboBoxCurrentIndexChanged(self, index: int):
+        if index < 0:
+            return
+        normalization = self._normalizationComboBox.itemData(index, QtCore.Qt.UserRole)
+        self.sigCurrentNormalizationChanged.emit(normalization)
+
     def setCurrentGradient(self, gradient: dict):
         """Set the currently selected gradient
 
@@ -113,6 +132,17 @@ class ColormapDialog(QtWidgets.QDialog):
     def getCurrentGradient(self) -> dict:
         """Returns the currently selected gradient"""
         return self._gradientComboBox.currentData()
+
+    def setCurrentNormalization(self, normalization: str):
+        """Set the currently selected normalization"""
+        index = self._normalizationComboBox.findData(normalization)
+        if index < 0:
+            raise ValueError(f"Unsupported normalization: {normalization}")
+        self._normalizationComboBox.setCurrentIndex(index)
+
+    def getCurrentNormalization(self) -> str:
+        """Returns the currently selected normalization"""
+        return self._normalizationComboBox.currentData()
 
     def _rangeChanged(self):
         minimum, maximum = self.getRange()
