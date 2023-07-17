@@ -67,7 +67,7 @@ class ColormapDialog(QtWidgets.QDialog):
         self._normalizationComboBox.currentIndexChanged.connect(self._normalizationComboBoxCurrentIndexChanged)
         layout.addRow('Normalization:', self._normalizationComboBox)
 
-        layout.addRow(QtWidgets.QLabel('Range:'))
+        layout.addRow('Range:', QtWidgets.QLabel())
         self._minEdit = QtWidgets.QLineEdit(self)
         self._minEdit.setValidator(QtGui.QDoubleValidator(1, float('inf'), -1))
         self._minEdit.editingFinished.connect(self._rangeChanged)
@@ -78,11 +78,29 @@ class ColormapDialog(QtWidgets.QDialog):
         self._maxEdit.editingFinished.connect(self._rangeChanged)
         layout.addRow('Max:', self._maxEdit)
 
-        self._autoscaleButton = QtWidgets.QPushButton('Autoscale', self)
-        self._autoscaleButton.clicked.connect(self._autoscaleButtonClicked)
+        reloadIcon = QtWidgets.QApplication.instance().style().standardIcon(
+            QtWidgets.QStyle.SP_BrowserReload
+        )
+        self._autoscaleButton = QtWidgets.QPushButton(reloadIcon, "Reset", self)
+        self._autoscaleButton.setToolTip("Scale colormap range with current mode")
+        self._autoscaleButton.clicked.connect(self._autoscaleRequested)
         self._autoscaleButton.setAutoDefault(False)
         self._autoscaleButton.setEnabled(False)
         layout.addRow('', self._autoscaleButton)
+
+        self._autoscaleModeComboBox = QtWidgets.QComboBox(self)
+        self._autoscaleModeComboBox.addItem("Default", "default")
+        self._autoscaleModeComboBox.setItemData(
+            0, "Use default colormap range autoscale", QtCore.Qt.ToolTipRole)
+        self._autoscaleModeComboBox.addItem("Min/Max", "minmax")
+        self._autoscaleModeComboBox.setItemData(
+            1, "Use data min/max to scale colormap range", QtCore.Qt.ToolTipRole)
+        self._autoscaleModeComboBox.addItem("Mean±3 Std", "mean3std")
+        self._autoscaleModeComboBox.setItemData(
+            2, "Use data mean ± 3 × standard deviation to scale colormap range", QtCore.Qt.ToolTipRole)
+        self._autoscaleModeComboBox.setCurrentIndex(0)
+        self._autoscaleModeComboBox.currentIndexChanged.connect(self._autoscaleRequested)
+        layout.addRow('Reset mode:', self._autoscaleModeComboBox)
 
         buttonBox = QtWidgets.QDialogButtonBox(parent=self)
         buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Close)
@@ -171,12 +189,13 @@ class ColormapDialog(QtWidgets.QDialog):
             maximum = minimum
         return minimum, maximum
 
-    def _autoscaleButtonClicked(self):
+    def _autoscaleRequested(self, *args):
         histogram = self.getDataHistogram()
         if histogram is None:
             return
         counts, bins = histogram
-        minimum, maximum = utils.auto_level(bins, counts)
+        mode = self._autoscaleModeComboBox.currentData()
+        minimum, maximum = utils.auto_level(bins, counts, mode)
         self.setRange(minimum, maximum)
 
     @staticmethod
