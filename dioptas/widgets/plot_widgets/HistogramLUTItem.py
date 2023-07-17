@@ -33,6 +33,7 @@ import pyqtgraph.functions as fn
 import pyqtgraph as pg
 import numpy as np
 from .ColormapDialog import ColormapDialog
+from .NormalizedImageItem import NormalizedImageItem
 from ..CustomWidgets import FlatButton
 from ... import icons_path, style_path
 
@@ -305,15 +306,25 @@ class HistogramLUTItem(GraphicsWidget):
     def _configurationButtonClicked(self):
         dialog = ColormapDialog()
         dialog.setCurrentGradient(self.gradient.saveState())
+        if isinstance(self.imageItem, NormalizedImageItem):
+            dialog.setCurrentNormalization(self.imageItem.getNormalization())
         dialog.setRange(*self.getExpLevels())
         dialog.setDataHistogram(counts=self.hist_y, bins=self.hist_x)
         dialog.sigCurrentGradientChanged.connect(self._configurationGradientChanged)
+        dialog.sigCurrentNormalizationChanged.connect(self._normalizationChanged)
         dialog.sigRangeChanged.connect(self.setLevels)
         dialog.exec()
 
     def _configurationGradientChanged(self, gradient: dict):
         self.gradient.restoreState(gradient)
         self.gradientChanged()
+
+    def _normalizationChanged(self, normalization: str):
+        if isinstance(self.imageItem, NormalizedImageItem):
+            self.imageItem.setNormalization(normalization)
+            sender = self.sender()
+            if isinstance(sender, ColormapDialog):
+                sender.setDataHistogram(counts=self.hist_y, bins=self.hist_x)
 
 
 class LogarithmRegionItem(LinearRegionItem):
