@@ -22,7 +22,14 @@ from __future__ import annotations
 import numpy as np
 
 
-def auto_level(hist_x: np.ndarray, hist_y: np.ndarray) -> tuple[float, float]:
+def weighted_average_std(a: np.ndarray, weights: np.ndarray) -> tuple[float, float]:
+    """Returns the weighted average and weighted standard deviation"""
+    mean, sum_of_weights = np.average(a, weights=weights, returned=True)
+    variance = np.sum(weights * (a - mean)  ** 2) / sum_of_weights
+    return mean, np.sqrt(variance)
+
+
+def _default_auto_level(hist_x: np.ndarray, hist_y: np.ndarray) -> tuple[float, float]:
     """Compute colormap range from histogram of the data
 
     :param hist_x: Bin left edges
@@ -43,3 +50,44 @@ def auto_level(hist_x: np.ndarray, hist_y: np.ndarray) -> tuple[float, float]:
     if len(hist_x[hist_x > 0]) > 0:
         min_level = max(min_level, np.nanmin(hist_x[hist_x > 0]))
     return min_level, max_level
+
+
+def _minmax_auto_level(hist_x: np.ndarray, hist_y: np.ndarray) -> tuple[float, float]:
+    """Returns min/max of the data
+
+    :param hist_x: Bin left edges
+    :param hist_y: Histogram count
+    :returns: (min, max)
+    """
+    bin_size = hist_x[-1] - hist_x[-2]
+    return hist_x[0], hist_x[-1] + bin_size
+
+
+def _mean3std_auto_level(hist_x: np.ndarray, hist_y: np.ndarray) -> tuple[float, float]:
+    """Returns mean+/-3std clipped to min/max of the data
+
+    :param hist_x: Bin left edges
+    :param hist_y: Histogram count
+    :returns: (lower limit, upper limit)
+    """
+    mean, std = weighted_average_std(hist_x, hist_y)
+    minimum, maximum = _minmax_auto_level(hist_x, hist_y)
+    return max(mean - 3 * std, minimum), min(mean + 3 * std, maximum)
+
+
+def auto_level(hist_x: np.ndarray, hist_y: np.ndarray, mode: str = 'default') -> tuple[float, float]:
+    """Compute colormap range from histogram of the data
+
+    :param hist_x: Bin left edges
+    :param hist_y: Histogram count
+    :param mode: Mode of autoscale computation: "default", "minmax", "mean3std"
+    :returns: (min, max)
+    :raise ValueError: If the mode is not supported
+    """
+    if mode == 'default':
+        return _default_auto_level(hist_x, hist_y)
+    if mode == 'minmax':
+        return _minmax_auto_level(hist_x, hist_y)
+    if mode == 'mean3std':
+        return _mean3std_auto_level(hist_x, hist_y)
+    raise ValueError(f'Unsupported mode: {mode}')
