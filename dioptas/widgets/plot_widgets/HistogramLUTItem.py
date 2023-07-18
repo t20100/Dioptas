@@ -21,6 +21,8 @@
 from __future__ import absolute_import
 
 import pathlib
+from typing import Optional
+
 from qtpy import QtCore, QtGui, QtWidgets
 from pyqtgraph.graphicsItems.GraphicsWidget import GraphicsWidget
 from pyqtgraph.graphicsItems.ViewBox import *
@@ -79,6 +81,7 @@ class HistogramLUTItem(GraphicsWidget):
         self.percentageLevel = False
         self.orientation = orientation
         self.autoLevel = autoLevel
+        self._img_data = None
 
         self.layout = QtWidgets.QGraphicsGridLayout()
         self.setLayout(self.layout)
@@ -263,6 +266,8 @@ class HistogramLUTItem(GraphicsWidget):
 
     def imageChanged(self, autoRange=False, img_data=None):
 
+        self._img_data = img_data
+
         if img_data is not None:
             hist = np.histogram(img_data, bins=3000)
             hist_x, hist_y = hist[1][:-1], hist[0]
@@ -287,6 +292,17 @@ class HistogramLUTItem(GraphicsWidget):
             self.plot.setData(hist_x_log, hist_y_log)
         elif self.orientation == 'vertical':
             self.plot.setData(hist_y_log, hist_x_log)
+
+    def getImageData(self, copy: bool = True) -> Optional[np.ndarray]:
+        """Returns currently displayed image data
+
+        :param copy: False to return internal array, do not modify!
+        """
+        if self._img_data is not None:
+            return np.array(self._img_data, copy=copy)
+        if isinstance(self.imageItem, NormalizedImageItem):
+            return self.imageItem.getData(copy=copy)
+        return None
 
     def getLevels(self):
         return self.region.getRegion()
