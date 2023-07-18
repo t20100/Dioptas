@@ -69,16 +69,50 @@ def _mean3std_auto_level(data: np.ndarray) -> tuple[float, float]:
     return max(mean - 3 * std, minimum), min(mean + 3 * std, maximum)
 
 
-def auto_level(data: Optional[np.ndarray], mode: str = 'default') -> Optional[tuple[float, float]]:
+def detector_gap_mask(data: np.ndarray) -> np.ndarray:
+    """Probe detector gap value and returns mask of pixels not belonging to gaps.
+
+    :param data: 2D image array for which to compute the mask
+    :returns: Mask with True for valid pixels and False for mask
+    """
+    if data.ndim != 2:
+        raise ValueError("2D array only are supported")
+
+    # Find columns with same values
+    equal_columns_mask = np.all(np.equal(data[0], data), axis=0)
+    if not np.any(equal_columns_mask):
+        return np.ones(data.shape, dtype=bool)
+
+    equal_values, counts = np.unique(data[0, equal_columns_mask], return_counts=True)
+    # At least 2 columns and not the whole image
+    mask = np.logical_and(counts > 1, counts < data.shape[1])
+    equal_values = equal_values[mask]
+    counts = counts[mask]
+    if len(equal_values) == 0:
+        return np.ones(data.shape, dtype=bool)
+
+    value = equal_values[np.argmax(counts)]
+    return data != value
+
+
+def auto_level(
+    data: Optional[np.ndarray],
+    mode: str = 'default',
+    filter_gaps: bool = False,
+) -> Optional[tuple[float, float]]:
     """Compute colormap range from data
 
     :param data: Data from which to compute colormap range
     :param mode: Mode of autoscale computation: "default", "minmax", "mean3std"
+    :param filter_gaps: Whether or not to probe and filter gaps
     :returns: (min, max) or None
     :raise ValueError: If the mode is not supported
     """
     if data is None:
         return None
+
+    if filter_gaps:
+        data = data[detector_gap_mask(data)]
 
     filtered_data = data[np.isfinite(data)]
     if filtered_data.size == 0:
