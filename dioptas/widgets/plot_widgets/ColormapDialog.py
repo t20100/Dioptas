@@ -103,6 +103,11 @@ class ColormapDialog(QtWidgets.QDialog):
         self._autoscaleModeComboBox.currentIndexChanged.connect(self._autoscaleRequested)
         layout.addRow('Reset mode:', self._autoscaleModeComboBox)
 
+        self._filterGapsCheckBox = QtWidgets.QCheckBox(self)
+        self._filterGapsCheckBox.setToolTip("Toggle detector gaps value filtering")
+        self._filterGapsCheckBox.toggled.connect(self._autoscaleRequested)
+        layout.addRow('Filter gaps:', self._filterGapsCheckBox)
+
         buttonBox = QtWidgets.QDialogButtonBox(parent=self)
         buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Close)
         closeButton = buttonBox.button(QtWidgets.QDialogButtonBox.Close)
@@ -193,7 +198,8 @@ class ColormapDialog(QtWidgets.QDialog):
     def _autoscaleRequested(self, *args):
         data = self.getData(copy=False)
         mode = self._autoscaleModeComboBox.currentData()
-        colormapRange = utils.auto_level(data, mode)
+        filter_gaps = self._filterGapsCheckBox.isChecked()
+        colormapRange = utils.auto_level(data, mode, filter_gaps)
         if colormapRange is None:
             return
         self.setRange(*colormapRange)
