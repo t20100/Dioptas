@@ -325,7 +325,7 @@ class HistogramLUTItem(GraphicsWidget):
         if isinstance(self.imageItem, NormalizedImageItem):
             dialog.setCurrentNormalization(self.imageItem.getNormalization())
         dialog.setRange(*self.getExpLevels())
-        dialog.setDataHistogram(counts=self.hist_y, bins=self.hist_x)
+        dialog.setData(self.getImageData(copy=False), copy=False)
         dialog.sigCurrentGradientChanged.connect(self._configurationGradientChanged)
         dialog.sigCurrentNormalizationChanged.connect(self._normalizationChanged)
         dialog.sigRangeChanged.connect(self.setLevels)
@@ -340,7 +340,7 @@ class HistogramLUTItem(GraphicsWidget):
             self.imageItem.setNormalization(normalization)
             sender = self.sender()
             if isinstance(sender, ColormapDialog):
-                sender.setDataHistogram(counts=self.hist_y, bins=self.hist_x)
+                sender.setData(self.getImageData(copy=False), copy=False)
 
 
 class LogarithmRegionItem(LinearRegionItem):

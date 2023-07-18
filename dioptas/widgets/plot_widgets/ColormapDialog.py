@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import pathlib
 
+import numpy as np
 from qtpy import QtGui, QtCore, QtWidgets
 import pyqtgraph.graphicsItems.GradientEditorItem
 
@@ -42,7 +43,7 @@ class ColormapDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._histogram = None
+        self._data = None
         self.setWindowTitle("Colormap configuration")
         self.setStyleSheet(
             pathlib.Path(style_path, "stylesheet.qss").read_text()
@@ -109,14 +110,14 @@ class ColormapDialog(QtWidgets.QDialog):
         closeButton.setAutoDefault(False)
         layout.addRow(buttonBox)
 
-    def setDataHistogram(self, counts: Optional[np.ndarray], bins: Optional[np.ndarray]):
-        """Set histogram of data to use for autoscale"""
-        self._histogram = None if counts is None or bins is None else (counts, bins)
-        self._autoscaleButton.setEnabled(self._histogram is not None)
+    def setData(self, data: Optional[np.ndarray], copy: bool = True):
+        """Set data to use for autoscale"""
+        self._data = None if data is None else np.array(data, copy=copy)
+        self._autoscaleButton.setEnabled(self._data is not None)
 
-    def getDataHistogram(self) -> Optional[tuple[np.ndarray, np.ndarray]]:
-        """Returns histogram of data if set as (counts, bins) else None"""
-        return self._histogram
+    def getData(self, copy: bool = True) -> Optional[tuple[np.ndarray, np.ndarray]]:
+        """Returns data used for autoscale if set else None"""
+        return np.array(self._data, copy=copy)
 
     def _gradientComboBoxCurrentIndexChanged(self, index: int):
         if index < 0:
@@ -190,13 +191,12 @@ class ColormapDialog(QtWidgets.QDialog):
         return minimum, maximum
 
     def _autoscaleRequested(self, *args):
-        histogram = self.getDataHistogram()
-        if histogram is None:
-            return
-        counts, bins = histogram
+        data = self.getData(copy=False)
         mode = self._autoscaleModeComboBox.currentData()
-        minimum, maximum = utils.auto_level(bins, counts, mode)
-        self.setRange(minimum, maximum)
+        colormapRange = utils.auto_level(data, mode)
+        if colormapRange is None:
+            return
+        self.setRange(*colormapRange)
 
     @staticmethod
     def _createQIconFromGradient(gradient: dict) -> QtGui.QIcon:
